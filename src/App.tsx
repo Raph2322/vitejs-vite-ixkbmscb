@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import {
   ShieldCheck, KeyRound, Database, Laptop, Wifi, Siren, Handshake,
   ArrowRight, ChevronRight, ChevronLeft, CheckCircle2, AlertTriangle,
-  XCircle, RotateCcw, Download, Sparkles,
+  XCircle, RotateCcw, Download, Sparkles, Scale, Lock, ArrowLeft,
 } from "lucide-react";
 
 // ---- Design tokens ----------------------------------------------------------
@@ -53,7 +53,7 @@ const DOMAINS = [
   { id: "ir", label: "Incident Response", icon: Siren, weight: 1.5,
     questions: [
       "A written incident response plan exists",
-      "A breach notification process to NITDA is defined",
+      "A breach notification process to the NDPC is defined",
       "Backups are taken and recovery has been tested",
     ]},
   { id: "vendor", label: "Vendor & Third-Party", icon: Handshake, weight: 1,
@@ -63,21 +63,112 @@ const DOMAINS = [
     ]},
 ];
 
+// Remediation content — the actual paid-report value. Keyed by "domainId-questionIndex".
+const REMEDIATION = {
+  "iam-0": {
+    why: "Stolen or guessed passwords are the single most common way attackers get in. MFA stops most of these attempts cold, even when a password is compromised.",
+    legal: "Falls under the NDPA's general duty to implement \u201Cappropriate technical and organisational measures\u201D to secure personal data — MFA is a baseline control regulators expect to see during a compliance audit.",
+    fix: "Turn on MFA (authenticator app preferred over SMS) for every staff account, starting with admin, finance, and anyone with customer-data access. Most email/identity providers (Microsoft 365, Google Workspace) support this natively at no extra cost.",
+  },
+  "iam-1": {
+    why: "Over-permissioned accounts turn one compromised login into full system exposure instead of a contained incident.",
+    legal: "Same general security-safeguards duty under the NDPA — proportionate access control is part of demonstrating \u201Caccountability,\u201D one of the Act's core principles.",
+    fix: "Review who has access to what every quarter. New accounts should start with the minimum access needed, not full access by default.",
+  },
+  "iam-2": {
+    why: "Dormant accounts from former staff are a common, quiet breach vector — nobody's watching them, but they still work.",
+    legal: "Security-safeguards duty and accountability principle under the NDPA.",
+    fix: "Add account deactivation to your official offboarding checklist so it happens same-day, not \u201Cwhen someone remembers.\u201D Review for stale/inactive accounts monthly.",
+  },
+  "data-0": {
+    why: "If a device or server is lost, stolen, or breached, unencrypted data is instantly and fully exposed — encrypted data is not.",
+    legal: "Encryption is explicitly named as an expected \u201Ctechnical and organisational measure\u201D under the NDPA's security obligations and reinforced by GAID.",
+    fix: "Enable encryption at rest (AES-256 on databases/storage) and in transit (HTTPS/TLS on every endpoint, no exceptions). Most cloud providers (AWS, Azure, GCP) offer this as a configuration toggle, not a rebuild.",
+  },
+  "data-1": {
+    why: "Data kept indefinitely with no purpose is pure downside — it adds breach exposure and legal liability without any business benefit.",
+    legal: "Directly tied to the NDPA's storage-limitation principle: personal data must not be kept longer than necessary for the purpose it was collected for.",
+    fix: "Write down how long each data type is actually needed (e.g. transaction records vs. marketing leads), then automate deletion or anonymization after that point.",
+  },
+  "data-2": {
+    why: "Collecting personal data without proper consent is a violation on its own — independent of how well you secure it afterward.",
+    legal: "Tied to the NDPA's lawful-basis requirements; GAID Article 19 specifically requires opt-in consent for cookies and tracking tools, with exceptions only for strictly necessary ones.",
+    fix: "Build a clear opt-in consent flow (no pre-ticked boxes), log the timestamp and version of what was consented to, and give users an easy way to withdraw consent later.",
+  },
+  "endpoint-0": {
+    why: "Unprotected endpoints are the easiest entry point for ransomware and malware — often the actual root cause behind headline breaches.",
+    legal: "Falls under the NDPA's security-safeguards duty.",
+    fix: "Deploy endpoint protection (Microsoft Defender, CrowdStrike, or similar) across every company device — including personal devices used for work, if allowed.",
+  },
+  "endpoint-1": {
+    why: "A lost or stolen laptop with unencrypted storage is an automatic data breach the moment it goes missing.",
+    legal: "Security-safeguards duty; encryption is specifically flagged by GAID as an expected control.",
+    fix: "Turn on BitLocker (Windows) or FileVault (Mac) fleet-wide. Both are built in and free — this is a configuration change, not a purchase.",
+  },
+  "endpoint-2": {
+    why: "Unpatched software is consistently the most exploited vulnerability category — attackers scan for known, unpatched holes at scale.",
+    legal: "Security-safeguards duty under the NDPA.",
+    fix: "Set a patching cadence (e.g. critical security patches within 7 days) and use a lightweight MDM tool once your device count grows past what you can track manually.",
+  },
+  "network-0": {
+    why: "Unsecured remote access exposes internal systems to interception, especially over public or home Wi-Fi.",
+    legal: "Security-safeguards duty under the NDPA.",
+    fix: "Require a VPN or zero-trust access tool for any remote connection into internal systems or customer data.",
+  },
+  "network-1": {
+    why: "Undocumented firewall rules accumulate silently over time and become impossible to audit or trust.",
+    legal: "Security-safeguards duty, and the NDPA's accountability principle — you must be able to demonstrate your controls, not just have them.",
+    fix: "Document current firewall rules, review them quarterly, and remove anything no longer in active use.",
+  },
+  "network-2": {
+    why: "A compromised guest device shouldn't have a path to internal systems or customer data.",
+    legal: "Security-safeguards duty under the NDPA.",
+    fix: "Split guest and staff traffic onto separate SSIDs or VLANs — a standard feature on most modern business routers.",
+  },
+  "ir-0": {
+    why: "Without a plan, the 72-hour regulatory clock starts before anyone in the organization knows what to actually do.",
+    legal: "Implicitly required to meet the breach-notification obligation under NDPA Section 40 and GAID Article 7(p).",
+    fix: "Draft a short plan naming who leads the response, who they escalate to, and how the NDPC gets notified — written down before an incident, not improvised during one.",
+  },
+  "ir-1": {
+    why: "Missing the notification deadline is a separate compliance failure on top of the breach itself — the clock doesn't wait for you to figure out a process.",
+    legal: "NDPA Section 40 and GAID Article 7(p) require notifying the NDPC within 72 hours of becoming aware of a breach likely to risk data subjects' rights. A separate Data Subject Notice is required \u201Cwithout undue delay\u201D for breaches posing a high risk to affected individuals.",
+    fix: "Pre-write your NDPC notification procedure and templates now: who has authority to file it, what details are required, and how affected users get notified if the breach is high-risk.",
+  },
+  "ir-2": {
+    why: "Backups that are never tested routinely fail exactly when they're needed most — commonly discovered mid-ransomware-recovery, too late.",
+    legal: "Security-safeguards duty (resilience and availability of processing systems).",
+    fix: "Schedule regular restore drills, not just backup jobs. A backup you haven't restored from is unverified.",
+  },
+  "vendor-0": {
+    why: "Your vendors' security weaknesses become your breach — and your regulatory liability — the moment they touch your customer data.",
+    legal: "NDPA Section 29(2) requires a written contract with any processor acting on your behalf, and the controller remains accountable for how that processor handles the data.",
+    fix: "Require a basic security questionnaire before onboarding any vendor that will touch customer data — even a simple one is better than none.",
+  },
+  "vendor-1": {
+    why: "Without a documented agreement, there's no clear legal basis or accountability trail for data shared with a partner.",
+    legal: "NDPA Section 29(2) — a written contract (Data Processing Agreement) is a legal requirement between a controller and any processor, not just best practice.",
+    fix: "Put a Data Processing Agreement in place with every partner or vendor that touches customer data before sharing anything with them.",
+  },
+};
+
 const VALUES = { yes: 1, partial: 0.5, no: 0 };
 
 function computeReport(answers) {
   let earned = 0, max = 0;
   const domainScores = [];
   const gaps = [];
+  const allItems = [];
   DOMAINS.forEach((d) => {
     let dE = 0, dM = 0;
     d.questions.forEach((q, i) => {
       const key = `${d.id}-${i}`;
       const v = answers[key];
+      allItems.push({ key, domain: d.label, question: q, answer: v });
       if (v === "na" || v === undefined) return;
       const pts = VALUES[v];
       dE += pts; dM += 1;
-      if (pts < 1) gaps.push({ domain: d.label, question: q, severity: d.weight * (1 - pts) });
+      if (pts < 1) gaps.push({ key, domain: d.label, question: q, severity: d.weight * (1 - pts) });
     });
     domainScores.push({ label: d.label, icon: d.icon, pct: dM ? (dE / dM) * 100 : 100, answered: dM });
     earned += dE * d.weight; max += dM * d.weight;
@@ -87,12 +178,12 @@ function computeReport(answers) {
   const tierColor = score >= 85 ? C.success : score >= 65 ? C.warn : score >= 40 ? "#D97706" : C.danger;
   const tierSoft = score >= 85 ? C.successSoft : score >= 65 ? C.warnSoft : score >= 40 ? "#FDEEDC" : C.dangerSoft;
   gaps.sort((a, b) => b.severity - a.severity);
-  return { score, tier, tierColor, tierSoft, domainScores, gaps: gaps.slice(0, 6) };
+  return { score, tier, tierColor, tierSoft, domainScores, gaps: gaps.slice(0, 6), allGaps: gaps, allItems };
 }
 
 // ---- Gauge -------------------------------------------------------------------
-function ScoreGauge({ score, color }) {
-  const size = 176, stroke = 14, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+function ScoreGauge({ score, color, size = 176 }) {
+  const stroke = 14, r = (size - stroke) / 2, c = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(100, score));
   const offset = c - (pct / 100) * c;
   return (
@@ -106,14 +197,13 @@ function ScoreGauge({ score, color }) {
         />
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ fontSize: 44, fontWeight: 700, color: C.textPrimary, lineHeight: 1, fontFamily: "'Sora', sans-serif" }}>{score}</div>
+        <div style={{ fontSize: size * 0.25, fontWeight: 700, color: C.textPrimary, lineHeight: 1, fontFamily: "'Sora', sans-serif" }}>{score}</div>
         <div style={{ fontSize: 12, color: C.textMuted, marginTop: 4, letterSpacing: 0.4 }}>OUT OF 100</div>
       </div>
     </div>
   );
 }
 
-// ---- Answer control ------------------------------------------------------------
 function SegButton({ selected, onClick, tone, children }) {
   const tones = {
     yes: { fg: C.success, bg: C.successSoft, border: C.success },
@@ -138,8 +228,23 @@ function SegButton({ selected, onClick, tone, children }) {
   );
 }
 
+function StatusPill({ answer }) {
+  const map = {
+    yes: { label: "PASS", color: C.success, bg: C.successSoft },
+    partial: { label: "PARTIAL", color: C.warn, bg: C.warnSoft },
+    no: { label: "FAIL", color: C.danger, bg: C.dangerSoft },
+    na: { label: "N/A", color: C.textSecondary, bg: "#F2F4F7" },
+  };
+  const m = map[answer] || map.na;
+  return (
+    <span style={{ fontSize: 11, fontWeight: 700, color: m.color, backgroundColor: m.bg, padding: "3px 9px", borderRadius: 20, letterSpacing: 0.3, flexShrink: 0 }}>
+      {m.label}
+    </span>
+  );
+}
+
 export default function EnterpriseNDPRTool() {
-  const [stage, setStage] = useState("intro");
+  const [stage, setStage] = useState("intro"); // intro | quiz | scanning | report | fullReport
   const [domainIndex, setDomainIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [scanning, setScanning] = useState(false);
@@ -169,13 +274,21 @@ export default function EnterpriseNDPRTool() {
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary, fontFamily: "'Sora', sans-serif" }}>Compliance Scan</div>
-              <div style={{ fontSize: 11, color: C.textMuted }}>NDPR Readiness Assessment</div>
+              <div style={{ fontSize: 11, color: C.textMuted }}>NDPA Readiness Assessment</div>
             </div>
           </div>
           {stage === "quiz" && (
             <div style={{ fontSize: 12, color: C.textSecondary, fontWeight: 600 }}>
               {totalAnswered} / {totalQuestions} answered
             </div>
+          )}
+          {stage === "fullReport" && (
+            <button
+              onClick={() => setStage("report")}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.textSecondary, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            >
+              <ArrowLeft size={15} /> Back to summary
+            </button>
           )}
         </div>
       </div>
@@ -193,7 +306,7 @@ export default function EnterpriseNDPRTool() {
             </h1>
             <p style={{ fontSize: 16, color: C.textSecondary, lineHeight: 1.6, maxWidth: 560, margin: "0 0 32px" }}>
               A structured scan across six security domains, built on NIST &amp; CIS control frameworks
-              and mapped directly to NDPR obligations. Get a readiness score and a prioritized action
+              and mapped directly to NDPA obligations. Get a readiness score and a prioritized action
               plan in minutes.
             </p>
             <button
@@ -221,7 +334,6 @@ export default function EnterpriseNDPRTool() {
         {/* QUIZ */}
         {stage === "quiz" && !scanning && (
           <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 32 }}>
-            {/* Sidebar rail */}
             <div>
               {DOMAINS.map((d, i) => {
                 const Icon = d.icon;
@@ -241,7 +353,6 @@ export default function EnterpriseNDPRTool() {
               })}
             </div>
 
-            {/* Question card */}
             <div style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 32 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <domain.icon size={16} color={C.brand} />
@@ -295,7 +406,7 @@ export default function EnterpriseNDPRTool() {
           </div>
         )}
 
-        {/* REPORT */}
+        {/* FREE REPORT */}
         {stage === "report" && (
           <div>
             <div style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 40, display: "flex", alignItems: "center", gap: 40, marginBottom: 24, flexWrap: "wrap" }}>
@@ -305,11 +416,12 @@ export default function EnterpriseNDPRTool() {
                   {report.tier.toUpperCase()}
                 </div>
                 <h2 style={{ fontSize: 22, fontWeight: 700, color: C.textPrimary, margin: "0 0 8px", fontFamily: "'Sora', sans-serif" }}>
-                  Your NDPR Readiness Report
+                  Your NDPA Readiness Report
                 </h2>
                 <p style={{ fontSize: 14, color: C.textSecondary, lineHeight: 1.6, margin: 0 }}>
                   Based on {totalAnswered} answered checks across six domains. This free summary
-                  highlights your top gaps — the full report includes remediation steps for every finding.
+                  highlights your top gaps — the full report includes remediation steps and legal
+                  citations for every finding.
                 </p>
               </div>
             </div>
@@ -360,9 +472,12 @@ export default function EnterpriseNDPRTool() {
             <div style={{ backgroundColor: C.navy, borderRadius: 14, padding: 28, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 4, fontFamily: "'Sora', sans-serif" }}>Get the full report</div>
-                <div style={{ fontSize: 13, color: "#B7C4DA" }}>Step-by-step remediation for every gap, ready to share with investors or partners.</div>
+                <div style={{ fontSize: 13, color: "#B7C4DA" }}>Step-by-step remediation and NDPA/GAID legal citations for every gap.</div>
               </div>
-              <button style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "#fff", color: C.navy, border: "none", padding: "12px 22px", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+              <button
+                onClick={() => setStage("fullReport")}
+                style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "#fff", color: C.navy, border: "none", padding: "12px 22px", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+              >
                 <Download size={15} /> Unlock full report
               </button>
             </div>
@@ -370,6 +485,102 @@ export default function EnterpriseNDPRTool() {
             <button
               onClick={restart}
               style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.textMuted, fontSize: 12.5, fontWeight: 600, marginTop: 24, cursor: "pointer" }}
+            >
+              <RotateCcw size={13} /> Start a new scan
+            </button>
+          </div>
+        )}
+
+        {/* FULL REPORT */}
+        {stage === "fullReport" && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: C.successSoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Lock size={15} color={C.success} />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.success, letterSpacing: 0.4, textTransform: "uppercase" }}>Full Report Unlocked</span>
+            </div>
+            <h1 style={{ fontSize: 30, fontWeight: 700, color: C.textPrimary, margin: "8px 0 8px", fontFamily: "'Sora', sans-serif" }}>
+              NDPA Compliance Remediation Report
+            </h1>
+            <p style={{ fontSize: 14.5, color: C.textSecondary, lineHeight: 1.6, maxWidth: 700, margin: "0 0 28px" }}>
+              Every check from your scan, with why it matters, the relevant NDPA/GAID basis, and exactly
+              what to do about it. Share this with your team, your investors, or your legal counsel.
+            </p>
+
+            <div style={{ display: "flex", gap: 40, marginBottom: 32, backgroundColor: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 28, flexWrap: "wrap", alignItems: "center" }}>
+              <ScoreGauge score={report.score} color={report.tierColor} size={120} />
+              <div>
+                <div style={{ display: "inline-block", backgroundColor: report.tierSoft, color: report.tierColor, fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, marginBottom: 10 }}>
+                  {report.tier.toUpperCase()}
+                </div>
+                <div style={{ fontSize: 13.5, color: C.textSecondary }}>
+                  {report.allGaps.length} of {totalAnswered} answered checks need attention.
+                </div>
+              </div>
+            </div>
+
+            {DOMAINS.map((d) => {
+              const items = report.allItems.filter((it) => it.domain === d.label && it.answer !== undefined);
+              if (items.length === 0) return null;
+              const Icon = d.icon;
+              return (
+                <div key={d.id} style={{ marginBottom: 28 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                    <Icon size={17} color={C.navy} />
+                    <h3 style={{ fontSize: 17, fontWeight: 700, color: C.textPrimary, margin: 0, fontFamily: "'Sora', sans-serif" }}>{d.label}</h3>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {items.map((it) => {
+                      const rem = REMEDIATION[it.key];
+                      const isPass = it.answer === "yes";
+                      const isNa = it.answer === "na";
+                      return (
+                        <div key={it.key} style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 22px" }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: (isPass || isNa) ? 0 : 14 }}>
+                            <div style={{ fontSize: 14.5, fontWeight: 600, color: C.textPrimary, lineHeight: 1.4 }}>{it.question}</div>
+                            <StatusPill answer={it.answer} />
+                          </div>
+                          {!isPass && !isNa && rem && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
+                              <div>
+                                <div style={{ fontSize: 10.5, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Why it matters</div>
+                                <div style={{ fontSize: 13.5, color: C.textSecondary, lineHeight: 1.55 }}>{rem.why}</div>
+                              </div>
+                              <div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                                  <Scale size={11} color={C.brand} />
+                                  <span style={{ fontSize: 10.5, fontWeight: 700, color: C.brand, textTransform: "uppercase", letterSpacing: 0.4 }}>Legal basis</span>
+                                </div>
+                                <div style={{ fontSize: 13.5, color: C.textSecondary, lineHeight: 1.55 }}>{rem.legal}</div>
+                              </div>
+                              <div style={{ backgroundColor: C.brandSoft, borderRadius: 8, padding: "10px 14px" }}>
+                                <div style={{ fontSize: 10.5, fontWeight: 700, color: C.navy, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>How to fix it</div>
+                                <div style={{ fontSize: 13.5, color: C.navy, lineHeight: 1.55 }}>{rem.fix}</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div style={{ backgroundColor: "#F2F4F7", border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 22px", marginTop: 8, marginBottom: 24 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary, marginBottom: 4 }}>Legal disclaimer</div>
+              <div style={{ fontSize: 12.5, color: C.textSecondary, lineHeight: 1.6 }}>
+                This report is for informational purposes and does not constitute legal advice. It does
+                not replace formal certification by a licensed Data Protection Compliance Organisation
+                (DPCO) or consultation with a qualified attorney. For official NDPC registration, DPO
+                appointment, or Compliance Audit Return filing, consult a licensed DPCO.
+              </div>
+            </div>
+
+            <button
+              onClick={restart}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
             >
               <RotateCcw size={13} /> Start a new scan
             </button>
