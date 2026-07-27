@@ -2,8 +2,29 @@ import React, { useState, useMemo } from "react";
 import {
   ShieldCheck, KeyRound, Database, Laptop, Wifi, Siren, Handshake,
   ArrowRight, ChevronRight, ChevronLeft, CheckCircle2, AlertTriangle,
-  XCircle, RotateCcw, Download, Sparkles, Scale, Lock, ArrowLeft,
+  XCircle, RotateCcw, Download, Sparkles, Scale, Lock, ArrowLeft, Copy, Check,
 } from "lucide-react";
+
+// ---- Unlock code system --------------------------------------------------
+// A Scan ID is generated per session. The founder sends it to you after paying;
+// you compute the matching unlock code using the same formula (see the
+// standalone generator tool) and send it back. This is intentionally simple —
+// good enough to gate access at low volume, not meant as strong security.
+const UNLOCK_SECRET = 481523; // must match the standalone generator tool exactly
+const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I to avoid confusion
+
+function generateScanId() {
+  let s = "";
+  for (let i = 0; i < 6; i++) s += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
+  return s;
+}
+
+function computeUnlockCode(scanId) {
+  let sum = 0;
+  for (let i = 0; i < scanId.length; i++) sum += scanId.charCodeAt(i) * (i + 7);
+  sum += UNLOCK_SECRET;
+  return String((sum % 900000) + 100000); // always a 6-digit code
+}
 
 // ---- Design tokens ----------------------------------------------------------
 const C = {
@@ -244,10 +265,34 @@ function StatusPill({ answer }) {
 }
 
 export default function EnterpriseNDPRTool() {
-  const [stage, setStage] = useState("intro"); // intro | quiz | scanning | report | fullReport
+  const [stage, setStage] = useState("intro"); // intro | quiz | scanning | report | locked | fullReport
   const [domainIndex, setDomainIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [scanning, setScanning] = useState(false);
+  const [scanId] = useState(generateScanId);
+  const [unlocked, setUnlocked] = useState(false);
+  const [codeInput, setCodeInput] = useState("");
+  const [codeError, setCodeError] = useState(false);
+  const [idCopied, setIdCopied] = useState(false);
+
+  function checkUnlockCode() {
+    if (codeInput.trim() === computeUnlockCode(scanId)) {
+      setUnlocked(true);
+      setCodeError(false);
+      setStage("fullReport");
+    } else {
+      setCodeError(true);
+    }
+  }
+
+  function copyScanId() {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(scanId).then(() => {
+        setIdCopied(true);
+        setTimeout(() => setIdCopied(false), 1800);
+      });
+    }
+  }
 
   const domain = DOMAINS[domainIndex];
   const report = useMemo(() => computeReport(answers), [answers]);
@@ -282,7 +327,7 @@ export default function EnterpriseNDPRTool() {
               {totalAnswered} / {totalQuestions} answered
             </div>
           )}
-          {stage === "fullReport" && (
+          {(stage === "fullReport" || stage === "locked") && (
             <button
               onClick={() => setStage("report")}
               style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: C.textSecondary, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
@@ -475,7 +520,7 @@ export default function EnterpriseNDPRTool() {
                 <div style={{ fontSize: 13, color: "#B7C4DA" }}>Step-by-step remediation and NDPA/GAID legal citations for every gap.</div>
               </div>
               <button
-                onClick={() => setStage("fullReport")}
+                onClick={() => setStage(unlocked ? "fullReport" : "locked")}
                 style={{ display: "flex", alignItems: "center", gap: 8, backgroundColor: "#fff", color: C.navy, border: "none", padding: "12px 22px", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
               >
                 <Download size={15} /> Unlock full report
@@ -488,6 +533,76 @@ export default function EnterpriseNDPRTool() {
             >
               <RotateCcw size={13} /> Start a new scan
             </button>
+          </div>
+        )}
+
+        {/* LOCKED — unlock code gate */}
+        {stage === "locked" && (
+          <div style={{ maxWidth: 480, margin: "40px auto 0" }}>
+            <div style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 36, textAlign: "center" }}>
+              <div style={{ width: 52, height: 52, borderRadius: 12, backgroundColor: C.brandSoft, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
+                <Lock size={24} color={C.brand} />
+              </div>
+              <h2 style={{ fontSize: 21, fontWeight: 700, color: C.textPrimary, margin: "0 0 8px", fontFamily: "'Sora', sans-serif" }}>
+                Unlock Your Full Report
+              </h2>
+              <p style={{ fontSize: 13.5, color: C.textSecondary, lineHeight: 1.6, margin: "0 0 24px" }}>
+                Send your Scan ID below to receive payment instructions and your unlock code.
+              </p>
+
+              <div style={{ backgroundColor: C.bg, border: `1px dashed ${C.borderStrong}`, borderRadius: 10, padding: "14px 16px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Your Scan ID</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: C.navy, letterSpacing: 2, fontFamily: "'Sora', sans-serif" }}>{scanId}</div>
+                </div>
+                <button
+                  onClick={copyScanId}
+                  style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: `1px solid ${C.borderStrong}`, borderRadius: 7, padding: "7px 10px", fontSize: 12, fontWeight: 600, color: C.textSecondary, cursor: "pointer" }}
+                >
+                  {idCopied ? <Check size={13} color={C.success} /> : <Copy size={13} />}
+                  {idCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
+
+              <p style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.6, margin: "0 0 20px" }}>
+                Message this Scan ID to <strong style={{ color: C.textPrimary }}>[090 3359 6366]</strong> to
+                complete payment — you'll receive a 6-digit unlock code in reply.
+              </p>
+
+              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 20, marginTop: 4 }}>
+                <label style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: C.textMuted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8, textAlign: "left" }}>
+                  Enter Unlock Code
+                </label>
+                <input
+                  value={codeInput}
+                  onChange={(e) => { setCodeInput(e.target.value); setCodeError(false); }}
+                  placeholder="6-digit code"
+                  maxLength={6}
+                  style={{
+                    width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 9, fontSize: 18,
+                    letterSpacing: 4, textAlign: "center", fontFamily: "'Sora', sans-serif", fontWeight: 700,
+                    border: `1.5px solid ${codeError ? C.danger : C.borderStrong}`, color: C.textPrimary, marginBottom: 8,
+                    outline: "none",
+                  }}
+                />
+                {codeError && (
+                  <div style={{ fontSize: 12.5, color: C.danger, marginBottom: 12, textAlign: "left" }}>
+                    That code doesn't match this Scan ID. Double-check and try again.
+                  </div>
+                )}
+                <button
+                  onClick={checkUnlockCode}
+                  disabled={codeInput.trim().length !== 6}
+                  style={{
+                    width: "100%", marginTop: 4, backgroundColor: codeInput.trim().length === 6 ? C.navy : C.border,
+                    color: codeInput.trim().length === 6 ? "#fff" : C.textMuted, border: "none", padding: "13px", borderRadius: 9,
+                    fontSize: 14, fontWeight: 700, cursor: codeInput.trim().length === 6 ? "pointer" : "default",
+                  }}
+                >
+                  Unlock Report
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
