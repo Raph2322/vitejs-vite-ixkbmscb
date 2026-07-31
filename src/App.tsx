@@ -4,6 +4,7 @@ import {
   ArrowRight, ChevronRight, ChevronLeft, CheckCircle2, AlertTriangle,
   XCircle, RotateCcw, Download, Sparkles, Scale, Lock, ArrowLeft, Copy, Check,
 } from "lucide-react";
+import { Analytics } from "@vercel/analytics/react";
 
 // ---- Unlock code system --------------------------------------------------
 // A Scan ID is generated per session. The founder sends it to you after paying;
@@ -702,6 +703,7 @@ export default function EnterpriseNDPRTool() {
           </div>
         )}
       </div>
+      <Analytics />
     </div>
   );
 }
